@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#050505">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+<title>Robô PRO - Especialista em Estado Novo</title>
+
+<style>
+:root {
+    --eye-white: #f0faff;
+    --dark-bg: #050505;
+    --glow-soft: rgba(240,250,255,0.15);
+}
+
+* {
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: var(--dark-bg);
+    overflow: hidden;
+    touch-action: manipulation;
+    overscroll-behavior: none;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+body {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100dvh;
+}
+
+#orientation-overlay {
+    position: fixed;
+    inset: 0;
+    background: #000;
+    color: white;
+    z-index: 99999;
+    display: none;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    font-family: Arial, sans-serif;
+}
+#orientation-overlay div { font-size: 60px; margin-bottom: 10px; }
+#orientation-overlay p { font-size: 20px; font-weight: bold; }
+
+@media (orientation: portrait) {
+    #orientation-overlay { display: flex; }
+}
+
+.face-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    height: 100%;
+    animation: float 4s ease-in-out infinite;
+}
+
+@keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-2.5vh); }
+}
+
+.eyes-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14vh;
+    width: 100%;
+}
+
+.eye {
+    width: 35vh; 
+    height: 30vh;
+    background: var(--eye-white);
+    border-radius: 12vh;
+    box-shadow: 0 0 4vh var(--glow-soft), 0 0 10vh rgba(240,250,255,0.07);
+    transition: all .35s cubic-bezier(.175, .885, .32, 1.275);
+}
+
+.sleeping .eye {
+    height: 1.2vh;
+    opacity: .2;
+    border-radius: 1vh;
+}
+
+.happy .eye {
+    height: 15vh;
+    background: transparent;
+    border-top: 3.8vh solid var(--eye-white);
+    border-radius: 15vh 15vh 0 0;
+    box-shadow: none;
+    transform: translateY(3.5vh);
+}
+
+.thinking #eye-l { height: 30vh; }
+.thinking #eye-r { height: 16vh; }
+
+.laughing .eye {
+    height: 7.5vh;
+    transform: skewX(12deg);
+}
+
+.blink .eye { transform: scaleY(0)!important; }
+
+.speaking .eye {
+    transform: scaleY(.88);
+    box-shadow: 0 0 5vh rgba(240,250,255,.2);
+}
+
+.listening .eye {
+    transform: scale(1.06);
+    box-shadow: 0 0 6vh rgba(240,250,255,.25);
+}
+
+.attentive .eye { transform: scale(1.02); }
+.thinking .eye { opacity: .82; }
+
+.surprised .eye {
+    transform: scale(1.1);
+    border-radius: 7vh;
+    box-shadow: 0 0 7vh rgba(240,250,255,.3);
+}
+
+#status {
+    position: fixed;
+    left: 50%;
+    bottom: max(4vh, calc(env(safe-area-inset-bottom) + 4vh));
+    z-index: 90000;
+    transform: translateX(-50%);
+    padding: 1.2vh 2.5vh;
+    border-radius: 999px;
+    background: rgba(0,0,0,.7);
+    border: 1px solid rgba(255,255,255,.12);
+    color: rgba(255,255,255,.85);
+    font: 15px/1.2 Arial, sans-serif;
+    pointer-events: none;
+    backdrop-filter: blur(8px);
+    text-align: center;
+    white-space: nowrap;
+}
+
+@media (max-height: 400px) {
+    #status { font-size: 13px; }
+}
+</style>
+</head>
+<body class="sleeping">
+
+<div id="status">Toque na tela pra começar a aula...</div>
+
+<div id="orientation-overlay">
+    <div>📱🔄</div>
+    <p>Deite o celular pra falar comigo!</p>
+</div>
+
+<div class="face-container" id="robot-face">
+    <div class="eyes-row">
+        <div id="eye-l" class="eye"></div>
+        <div id="eye-r" class="eye"></div>
+    </div>
+</div>
+
+<script>
+const body = document.body;
+const robotFace = document.getElementById("robot-face");
+const statusEl = document.getElementById("status");
+
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+const recognition = SpeechRecognition ? new SpeechRecognition() : null;
+
+let audioCtx = null;
+let voices = [];
+let robotSpeaking = false;
+let listeningForUser = false;
+let processingUser = false;
+let conversationStarted = false;
+let sessionFinished = false;
+
+let userName = "";
+let currentStep = "nome";
+let turnosConversa = 0;
+
+// Base de Conhecimento PRO - Estado Novo
+const baseConhecimento = [
+    {
+        id: "golpe",
+        keys: ["golpe", "cohen", "comunista", "comeco", "inicio", "1937"],
+        resp: "O golpe rolou em 37 porque o Vargas usou uma fake news gigante, o Plano Cohen, dizendo que os comunistas iam tomar tudo. Com esse medo, ele fechou o Congresso e virou ditador!",
+        expr: "surprised"
+    },
+    {
+        id: "dip",
+        keys: ["dip", "censura", "propaganda", "radio", "jornal", "hora do brasil", "informacao", "controlar"],
+        resp: "Se liga no DIP: era o departamento que censurava jornais e rádios. Eles criaram 'A Hora do Brasil' só pra falar bem do Vargas. Ele era vendido como super-herói nas cartilhas das escolas, ninguém podia falar mal, sacou?",
+        expr: "thinking"
+    },
+    {
+        id: "clt",
+        keys: ["clt", "trabalho", "trabalhador", "salario", "carteira", "sindicato", "direitos", "pobre", "pobres"],
+        resp: "A jogada de mestre do Vargas foi a CLT em 43. Ele deu carteira assinada, férias e salário mínimo. Por isso chamavam ele de 'Pai dos Pobres'. Mas o detalhe: em troca, greve era proibida e ele controlava os sindicatos!",
+        expr: "happy"
+    },
+    {
+        id: "economia",
+        keys: ["csn", "industria", "economia", "fabrica", "vale do rio doce", "siderurgica", "dinheiro"],
+        resp: "Na economia, o Estado Novo focou pesadíssimo na indústria de base. Ele criou a CSN pra fazer aço e a Vale do Rio Doce. A ideia era o Brasil parar de depender só de café.",
+        expr: "attentive"
+    },
+    {
+        id: "guerra",
+        keys: ["guerra", "feb", "segunda guerra", "nazismo", "hitler", "eua", "cobra", "pracinha", "italia"],
+        resp: "Na Segunda Guerra, o Brasil acabou mandando a FEB, nossos pracinhas, pra lutar na Itália contra o fascismo. A famosa frase 'a cobra fumou'! Mas pensa na loucura: uma ditadura aqui lutando contra ditadores lá fora.",
+        expr: "laughing"
+    },
+    {
+        id: "constituicao",
+        keys: ["constituicao", "polaca", "leis", "fascista", "autoritario"],
+        resp: "A Constituição de 1937 foi apelidada de 'Polaca' porque foi inspirada em leis fascistas da Europa. Ela dava poder total pro Vargas e cancelou todas as eleições. Sinistro, né?",
+        expr: "surprised"
+    },
+    {
+        id: "fim",
+        keys: ["terminou", "queda", "1945", "caiu", "deposto", "final"],
+        resp: "O Estado Novo caiu em 1945. Depois que o Brasil lutou pela democracia na Europa, ficou insustentável manter a ditadura aqui dentro. O próprio exército forçou o Vargas a renunciar.",
+        expr: "thinking"
+    }
+];
+
+// Solicita tela cheia apenas uma vez de forma opcional ao iniciar
+async function tentarTelaCheia() {
+    if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+        try { 
+            await document.documentElement.requestFullscreen(); 
+        } catch (err) {}
+    }
+}
+
+if (recognition) {
+    recognition.lang = "pt-BR";
+    recognition.continuous = false; 
+    recognition.interimResults = false;
+
+    recognition.onstart = () => {
+        if (!robotSpeaking && !processingUser) {
+            listeningForUser = true;
+            body.className = "listening";
+            setStatus("Manda bala, tô ouvindo...");
+        }
+    };
+
+    recognition.onresult = event => {
+        if (sessionFinished || processingUser || robotSpeaking) return;
+
+        const lastIndex = event.results.length - 1;
+        const result = event.results[lastIndex];
+        if (!result || !result.isFinal || !result[0]) return;
+
+        const texto = (result[0].transcript || "").trim();
+        if (!texto) return;
+
+        listeningForUser = false;
+        processingUser = true;
+        processarResposta(texto);
+    };
+
+    recognition.onerror = (event) => {
+        if (event.error === 'no-speech' || event.error === 'aborted') return;
+    };
+
+    recognition.onend = () => {
+        if (conversationStarted && !sessionFinished && !robotSpeaking && !processingUser) {
+            try {
+                recognition.start();
+            } catch(e) {}
+        }
+    };
+}
+
+function setStatus(text) {
+    if (statusEl) statusEl.textContent = text;
+}
+
+function inicializarAudioContext() {
+    try {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
+    } catch (e) {}
+}
+
+function carregarVozes() {
+    voices = window.speechSynthesis ? window.speechSynthesis.getVoices() : [];
+}
+carregarVozes();
+if (window.speechSynthesis && "onvoiceschanged" in window.speechSynthesis) {
+    window.speechSynthesis.onvoiceschanged = carregarVozes;
+}
+
+function encontrarMelhorVoz() {
+    carregarVozes();
+    return voices.find(v => v.lang.toLowerCase().includes("pt-br") && (v.name.includes("Google") || v.name.includes("Luciana") || v.name.includes("Daniel"))) 
+        || voices.find(v => v.lang.toLowerCase().includes("pt")) 
+        || null;
+}
+
+function falar(texto, expressao = "speaking") {
+    return new Promise(resolve => {
+        robotSpeaking = true; 
+        processingUser = false;
+        listeningForUser = false;
+        
+        try { recognition.stop(); } catch(e) {}
+
+        body.className = expressao; 
+        setStatus("Explicando...");
+        
+        if (!window.speechSynthesis) {
+            robotSpeaking = false;
+            resolve();
+            return;
+        }
+
+        window.speechSynthesis.cancel();
+        const msg = new SpeechSynthesisUtterance(texto);
+        msg.lang = "pt-BR";
+        msg.pitch = 1.05; 
+        msg.rate = 1.15;
+        
+        const voz = encontrarMelhorVoz();
+        if (voz) msg.voice = voz;
+
+        let finalizado = false;
+        const finalizar = () => {
+            if (finalizado) return;
+            finalizado = true;
+            robotSpeaking = false;
+            
+            if (!sessionFinished) {
+                listeningForUser = true;
+                body.className = "listening";
+                setStatus("Sua vez de falar...");
+                try { recognition.start(); } catch(e) {}
+            }
+            resolve();
+        };
+
+        msg.onend = finalizar;
+        msg.onerror = finalizar;
+
+        const tempoEstimado = (texto.split(" ").length * 280) + 1200;
+        setTimeout(() => { if (!finalizado) finalizar(); }, tempoEstimado);
+        
+        window.speechSynthesis.speak(msg);
+    });
+}
+
+function esperar(ms) { return new Promise(r => setTimeout(r, ms)); }
+function normalizar(texto) { return texto.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""); }
+
+async function processarResposta(fala) {
+    body.className = "thinking"; 
+    setStatus("Analisando sua resposta...");
+    await esperar(700);
+
+    const txt = normalizar(fala);
+    let resposta = "";
+    let expressao = "speaking";
+    turnosConversa++;
+
+    const querParar = ["nao", "não", "chega", "parar", "encerrar", "ja deu", "tá bom", "ta bom", "satisfeito", "fechar", "terminar"].some(k => 
+        txt.includes(k) && !txt.includes("nao sei") && !txt.includes("nao lembro") && txt.length < 30
+    );
+
+    let bestMatch = null;
+    let maxScore = 0;
+    baseConhecimento.forEach(item => {
+        let score = item.keys.filter(k => txt.includes(k)).length;
+        if (score > maxScore) {
+            maxScore = score;
+            bestMatch = item;
+        }
+    });
+
+    if (querParar && currentStep !== "nome") {
+        currentStep = "final";
+        resposta = `Beleza pura, ${userName}! Já deu pra dar uma boa revisada na história. Lembra do principal: Estado Novo foi ditadura, censura e CLT. Até a próxima!`;
+        expressao = "happy";
+    } 
+    else if (turnosConversa >= 6) {
+        currentStep = "final";
+        resposta = `Caramba, nosso tempo voou! Já batemos uns bons minutos de papo. Pra não ficar muito longo, vou encerrar por aqui, ${userName}. Adorei trocar essa ideia com você. Valeu e até mais!`;
+        expressao = "happy";
+    } 
+    else if (currentStep === "nome") {
+        let limpo = txt.replace(/(meu nome e|me chamo|eu sou|sou|o meu nome)/g, "").trim();
+        userName = limpo.split(" ")[0] || "parceiro";
+        userName = userName.charAt(0).toUpperCase() + userName.slice(1);
+        
+        currentStep = "escolha_1";
+        resposta = `Fala, ${userName}! Bem-vindo ao resumão PRO sobre o Estado Novo. Vargas governou como ditador entre 1937 e 1945. Quer que eu te conte primeiro sobre o Golpe da Fake News ou prefere ir direto pras Leis Trabalhistas?`;
+        expressao = "happy";
+    } 
+    else if (bestMatch && maxScore >= 1) {
+        resposta = baseConhecimento.find(i => i.id === bestMatch.id).resp + " Quer saber mais algum detalhe ou prefere encerrar o papo?";
+        expressao = bestMatch.expr;
+        currentStep = "livre";
+    } 
+    else if (currentStep === "escolha_1") {
+        if (txt.includes("golpe") || txt.includes("fake") || txt.includes("primeiro") || txt.includes("isso")) {
+            resposta = "Massa! Foi o Plano Cohen. Inventaram que os comunistas iam tomar o Brasil, e com esse pânico, o Vargas fechou o Congresso e virou ditador. Sacou? Agora, quer saber como ele censurava os meios de comunicação da época, ou prefere ouvir sobre a CLT?";
+            expressao = "surprised";
+            currentStep = "escolha_2";
+        } else {
+            resposta = "Bora pra CLT então! Em 43, ele criou a carteira de trabalho, férias e salário mínimo. A galera amou! Mas o truque era: greve era proibida. Sabendo disso, quer que eu fale sobre como ele controlava as notícias, ou já quer finalizar?";
+            expressao = "thinking";
+            currentStep = "escolha_2";
+        }
+    } 
+    else if (currentStep === "escolha_2") {
+        resposta = "A censura era braba! O DIP controlava rádios e jornais, ninguém falava mal dele. Ele era o 'Pai dos Pobres' na propaganda. Pra fechar com chave de ouro, quer ouvir a loucura que foi o Brasil na Segunda Guerra Mundial, ou tá satisfeito?";
+        expressao = "attentive";
+        currentStep = "escolha_guerra";
+    } 
+    else if (currentStep === "escolha_guerra") {
+        resposta = "Se liga: O Brasil mandou soldados pra lutar contra o ditador Hitler na Europa. Só que a gente vivia numa ditadura aqui! Essa hipocrisia fez o exército tirar o Vargas do poder em 45. Quer ver mais alguma coisa ou encerramos?";
+        expressao = "laughing";
+        currentStep = "livre";
+    } 
+    else if (currentStep === "livre") {
+        resposta = "Não peguei 100% dessa última, mas nosso foco é o Estado Novo. Quer escolher outro assunto ou prefere que eu encerre a aula?";
+        expressao = "thinking";
+    }
+
+    if (currentStep === "final") {
+        sessionFinished = true;
+        body.className = "happy";
+        await falar(resposta, expressao);
+        body.className = "sleeping";
+        setStatus("Aula concluída com sucesso.");
+        try { recognition.abort(); } catch(e){}
+        return;
+    }
+
+    await falar(resposta, expressao);
+}
+
+let startBusy = false;
+robotFace.addEventListener("click", async () => {
+    if (startBusy || conversationStarted) return;
+    startBusy = true;
+
+    try {
+        inicializarAudioContext();
+        await tentarTelaCheia();
+
+        if (!recognition) {
+            setStatus("Navegador sem suporte a voz.");
+            return;
+        }
+
+        conversationStarted = true;
+        sessionFinished = false;
+        currentStep = "nome";
+        turnosConversa = 0;
+        
+        try { 
+            recognition.start(); 
+        } catch(e) {}
+        
+        await falar("E aí, beleza? Sou seu professor virtual exclusivo de História! Pode falar o seu nome pra gente mandar ver no assunto do Estado Novo!", "happy");
+        
+    } finally {
+        setTimeout(() => { startBusy = false; }, 700);
+    }
+});
+
+setInterval(() => {
+    if (!conversationStarted || sessionFinished || body.classList.contains("sleeping")) return;
+    const previousClass = body.className;
+    body.classList.add("blink");
+    setTimeout(() => {
+        body.className = previousClass; 
+    }, 150);
+}, 4000);
+
+document.addEventListener("gesturestart", e => e.preventDefault());
+document.addEventListener("contextmenu", e => e.preventDefault());
+</script>
+</body>
+</html>
